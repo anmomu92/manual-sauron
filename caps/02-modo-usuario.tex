@@ -1,0 +1,64 @@
+\chapter{Modo usuario}\label{sec:cap2}
+
+\section{Clonación}
+El primer paso a la hora de clonar el repositorio de SAURON es crear un directorio donde albergarlo. Llamaremos a este directorio \verb|src|. La clonación del repositorio en una máquina local se puede llevar a cabo a través de SSH o de HTTPS.
+
+\begin{itemize}
+    \item SSH. Este método sólo funciona desde la red de la universidad por lo que, si se desea clonar fuera de dicha red, será necesario utilizar una VPN. Tampoco funciona en CELLIA. Otra cosa a tener en cuenta es la creación de las correspondientes claves privada/pública\footnote{\url{https://docs.gitlab.com/ee/user/ssh.html}}.
+    \item HTTPS. Este método pedirá introducir el usuario y la contraseña, a no ser que usemos tokens\footnote{\url{https://gitraap.i3a.info/-/user_settings/personal_access_tokens}}. El Listing \ref{lst:https-token} muestra la instrucción necesaria para incluir un token.
+
+    \begin{mycode}[style=bashstyle, label=lst:https-token, caption={Instrucción para incluir un token.}]
+git config --global url."https://git:token@gitraap.i3a.info".insteadOf "https://gitraap.i3a.info"
+    \end{mycode}
+\end{itemize}
+
+El Listing \ref{lst:clonar-SAURON} muestra las instrucciones necesarias para clonar el repositorio de SAURON y moverse a su directorio raíz.
+
+\begin{mycode}[style=bashstyle, label=lst:clonar-SAURON, caption={Instrucción para incluir un token.}]
+mkdir -p ~/src; cd ~/src
+git clone https://gitraap.i3a.info/jesus.escudero/SAURON.git
+cd SAURON
+\end{mycode}
+
+\section{Ramas}
+El desarrollo de SAURON se divide en una serie de ramas de desarrollo de características (e.g. \verb|dev-scripts|, \verb|dev-tracelib|, \verb|dev-qos|...) que, una vez implementadas y testeadas, se integrarán en la rama principal de desarrollo, llamada \verb|Development|. 
+
+\subsection{Merge Requests}
+Cuando se implementa alguna funcionalidad dentro de una de las ramas de desarrollo de características, es recomendable hacer un \emph{merge} de \verb|origin/Development|, resolver los conflictos que puedan surgir y revisar el pipeline CI/CD.
+Asimismo, es recomendable programar tests (tanto escenario como script de ejecución) que comprueben los resultados de simulaciones para añadirlos al CI/CD.
+
+\section{Scripts}
+En SAURON se incluyen una serie de scripts que configuran diferentes aspectos del simulador. Los scripts más importantes son los siguientes:
+
+\begin{itemize}
+    \item \verb|./scripts/server/compilar|. Este script hay que ejecutarlo para compilar todo el proyecto de SAURON. Para su correcta ejecución hay que cambiar las variables de entorno \verb|SAURON_ROOT| y \verb|OMNET_ROOT|.
+    \item \verb|./scripts/server/run|. Este script hay que ejecutarlo para lanzar una simulación.
+    \item \verb|cellia_remote_build|. Este script compila SAURON en CELLIA directamente. 
+    \item \verb|run_cellia|. Este script ejecuta el modelo en CELLIA.
+    \item \verb|./scripts/interactive/gen-vscode-cfgs.py|. Este script genera las configuraciones necesarias para trabajar con VSCode.
+    \item \verb|./scripts/server/callgrind|. Este script lleva a cabo un profile de llamadas a métodos.
+    \item \verb|./scripts/server/valgrind|. Este script lleva a cabo un profile de memoria.
+\end{itemize}
+
+Para que funcionen ciertos scripts es necesario instalar una serie de dependencias en Ubuntu/Debian. Para instalarlas, se utiliza el siguiente comando:
+
+\begin{mycode}[style=bashstyle, label=lst:https-token, caption={Instrucción para instalar las dependencias de SAURON.}]
+sudo apt install fzf libnotify-bin valgrind kcachegrind
+\end{mycode}
+
+\section{INIs}
+En el directorio \verb|simulations/| hay archivos de configuración listos para lanzar simulaciones. Cada directorio, si pertenece a una topología específica, contendrá también el fichero \verb|NED| que define dicha topología.\footnote{\url{https://gitraap.i3a.info/jesus.escudero/SAURON/-/wikis/simulations-dir}}\\
+Las estadísticas que se quieran recoger se definirán dentro de los módulos en los ficheros \verb|NED| correspondientes. Para escoger cómo se guardarán los resultados hay que indicarlo en los ficheros \verb|INI|, de configuración. \textbf{Es importante elegir correctamente los modos de guardado de las estadísticas} \footnote{\url{https://doc.omnetpp.org/omnetpp/manual/\#sec:ana-sim:configuring-recording-modes}}.
+
+\subsection{Estadísticas}
+Cuando termina una simulación, los resultados se guardan por defecto en formatos \verb|.vec|, que contiene datos vectoriales, y \verb|.sca|, que contienen datos escalares. Para generar gráficos a partir de los resultados obtenidos, se puede usar el IDE o generar un CSV a partir de los ficheros antes mencionados\footnote{\url{https://doc.omnetpp.org/omnetpp/manual/\#sec:ana-sim:scavetool}}. El comando a ejecutar para la generación de los ficheros \verb|.csv| se muestra en el Listing \ref{lst:generar-csv}
+
+\begin{mycode}[style=bashstyle, label=lst:generar-csv, caption={Instrucción para generar un CSV a partir de los resultados.}]
+opp_scavetool x test/ci-tests/qos/results/*sca -o synth.csv
+\end{mycode}
+
+Algunas opciones extra para formatear las gráficas (tamaño de la letra, ejes, grosor de las líneas...) se pueden encontrar en Internet \footnote{\url{https://matplotlib.org/stable/users/explain/customizing.html\#the-default-matplotlibrc-file}}.
+
+\section{Wiki (WIP)}
+La wiki del repositorio incluye información sobre esquemas de colas, patrones de tráfico y diferentes guías (guía de inicio, guía del directorio \verb|simulations/|).
+

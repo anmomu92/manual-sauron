@@ -1,0 +1,440 @@
+\chapter{Modo desarrollador}\label{sec:cap3}
+Esta sección está dedicada a explicar más en detalle los aspectos más relevantes a tener en cuenta a la hora de desarrollar dentro de SAURON.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SECTION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Estructura de SAURON}
+Para entender la estructura de SAURON, primero se van a explicar unos breves conceptos generales aplicados al mismo SAURON. Tras esto, se pasará a explicar más en detalle la estructura del proyecto y cada uno de sus subdirectorios.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SUBSECTION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Conceptos generales}
+
+Este proyecto, como cualquier proyecto de OMNeT++, incluye una serie de componentes que se enumeran a continuación:
+
+\begin{itemize}
+    \item \textbf{Módulos compuestos.} Estos módulos son resultado de la composición de diferentes módulos simples que encapsulan funcionalidades concretas y, generalmente, no tienen una clase asociada. Todas las redes que se modelen incluirán los siguientes módulos compuestos:
+        \begin{itemize}
+            \item \emph{Sys.} Genera los mensajes, los empaqueta y manda a las HCAs para que se inyecten en la red.
+            \textcolor{red}{AÑADIR IMAGEN}
+
+            \item \emph{HCA.} Inyectan y reciben los paquetes de la red.
+            \textcolor{red}{AÑADIR IMAGEN}
+
+            \item \emph{Switches.} Dirigen los paquetes hacia su destino, conmutando estos de la entrada a la salida que más convenga a su destino.
+            \textcolor{red}{AÑADIR IMAGEN}
+
+        \end{itemize}
+
+    \begin{keyconceptbox}[NetConf]
+        Un fichero importante es \verb|NetConf| que, a pesar de no ser un módulo compuesto, incluye parámetros de configuración de la red.
+
+        \textcolor{red}{AÑADIR IMAGEN}        
+    \end{keyconceptbox}
+    
+    \item \textbf{Módulos simples.} Estos módulos contienen la definición de elementos que se encargan de una función particular y cuya composición da lugar a módulos más complejos que modelan dispositivos reales, como pueden ser switches, NICs o routers. Los módulos simples tienen una clase de C++ asociada en la que se implementa su funcionalidad. La clase que se asocia a cada módulo simple hereda de \verb|cSimpleModule| y, tiene que sobreescribir una serie de funciones que hereda de la clase padre, y que se encargan de definir qué hace el módulo cuando se inicia, recibe un paquete o finaliza su ejecución. La declaración de estas funciones se muestra en el Listing \ref{lst:funciones-heredadas}.
+
+    \begin{mycode}[style=bashstyle, label=lst:funciones-heredadas, caption={Declaración de las funciones que se heredan de cSimpleModule, y que hay que sobreescribir.}]
+void initialize();
+virtual void handleMessage(cMessage *p_msg);
+void finish();
+    \end{mycode}
+
+    % initialize()
+    \begin{keyconceptbox}[initialize ()]
+        Esta función se ejecuta al inicio de la simulación, cuando se crea el módulo correspondiente. Aquí se pueden definir etapas, si algún módulo necesita inicializarse después que otro. La función puede leer los parámetros declarados en los ficheros \verb|.NED| e inicializados en el fichero \verb|.INI|. También se puede llevar a cabo la inicialización de instancias de otras clases.
+
+        \begin{mycode}[style=cstyle, label=lst:initialize, caption={Sobreescritura de la función initialize() dentro de uno de los módulos.}]
+void Arbiter_2P_DTable::initialize(int stage) {
+    Arbiter_TwoPhased::initialize(stage);
+    if (stage == 1) {
+        NumPorts = getAncestorPar("numPorts");
+        int numQueues = getAncestorPar("numQueues");
+        const char* fileName = par("VLTableFileName").stringValue();
+        uint16_t mtuFlits = getSimulation()->getModuleByPath("sys.sysMng")->par("mtuFlits").intValue();
+        DTable = new ArbitrationDeficitTable*[NumPorts];
+        for (int i = 0; i < NumPorts; i++) {
+            DTable[i] = new ArbitrationDeficitTable(fileName, numQueues, mtuFlits);
+        }
+        #if DEBUG_ARBITER_QUEUE_SELECTION
+        bytesGranted.resize(NumQueues);
+        #endif
+    }
+}
+        \end{mycode}        
+    \end{keyconceptbox}
+
+    % handleMessage()
+    \begin{keyconceptbox}[handleMessage (cMessage *p\_msg)]
+        Esta función se ejecuta cuando el módulo recibe un mensaje. Dependiendo del tipo de mensaje, se pueden ejecutar funciones específicas.
+
+        \begin{mycode}[style=cstyle, label=lst:handle-message, caption={Sobreescritura de la función handleMessage() dentro de uno de los módulos.}]
+void Arbiter::handleMessage(cMessage *p_msg) {
+#if DEBUG
+    EV << getFullPath() << " - FUNC: handleMessage " << endl;
+#endif
+
+    switch (p_msg->getKind()) {
+    case REQUEST_MSG:
+        handleRequestMsg((SimpleRequestMsg*) p_msg);
+        break;
+    case CREDIT_MSG:
+        handleCreditMsg((CreditMsg*) p_msg);
+        break;
+    case CONTROL_MSG:
+        handleControlMsg((ControlMsg*) p_msg);
+        break;
+    case FREE_MSG:
+        handleFreeMsg((FreeMsg*) p_msg);
+        break;
+    default:
+        delete p_msg;
+        break;
+    }
+}
+        \end{mycode}        
+    \end{keyconceptbox}
+
+    % finish()
+    \begin{keyconceptbox}[finish()]
+        Esta función se ejecuta al final de la simulación y se puede utilizar para emitir y recolectar estadísticas del módulo, así como para limpiar la memoria que se haya reservado al inicio y durante la simulación.
+
+        \begin{mycode}[style=cstyle, label=lst:finish, caption={Sobreescritura de la función finish() dentro de uno de los módulos.}]
+void Arbiter::finish() {
+    delete[] OBusy;
+    for (int i = 0; i < NumPorts; i++) {
+        delete[] IBusy[i];
+    }
+    if (BlockingOQueue) {
+        for (int i = 0; i < NumPorts; i++) {
+            delete[] numCreditsToUnblock[i];
+        }
+        delete[] numCreditsToUnblock;
+    }
+    delete[] IBusy;
+
+    delete Grants;
+    delete InstanceVOQLogic;
+    delete InstanceVNAllocator;
+    delete InstanceCreditChecker;
+    delete InstanceRoutingUnit;
+}
+        \end{mycode}        
+    \end{keyconceptbox}
+    
+    Algunos de los módulos simples definidos en SAURON son los siguientes:
+        \begin{itemize}
+            \item Port
+            \item Crossbar
+            \item Arbiter
+            \item InjectionQueues
+            \item Sink
+            \item SystemManager
+            \item Application
+            \begin{itemize}
+                \item SystheticApplication
+                \item TraceApplication
+            \end{itemize}
+        \end{itemize}
+    \item \textbf{Mensajes.} Incluyen la definición de formatos de mensaje específicos. Los mensajes se utilizan para que los módulos se comuniquen entre sí, o para retroalimentar la máquina de estados de un módulo. Los mensajes se definen dentro del fichero \verb|src/Message.msg| y, a partir de este, OMNeT++ generará las diferentes clases correspondientes a cada tipo de paquete.
+
+        \begin{mycode}[style=bashstyle, label=lst:message.msg, caption={Definición de mensajes.}]
+void initialize();
+virtual void handleMessage(cMessage *p_msg);
+void finish();
+        \end{mycode}
+    
+\end{itemize}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SUBSECTION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Árbol de directorios}
+
+El árbol de directorios de SAURON es el siguiente:
+
+% Árbol de directorios de SAURON
+\begin{forest}
+  for tree={
+    font=\ttfamily,
+    grow'=0,
+    child anchor=west,
+    parent anchor=south,
+    anchor=west,
+    calign=first,
+    edge path={
+      \noexpand\path [draw, \forestoption{edge}]
+      (!u.south west) +(7.5pt,0) |- node[fill,inner sep=1.25pt] {} (.child anchor)\forestoption{edge label};
+    },
+    before typesetting nodes={
+      if n=1
+        {insert before={[,phantom]}}
+        {}
+    },
+    fit=band,
+    before computing xy={l=15pt},
+  }
+[sauron
+    [Binaries/]
+    [Archives/]
+    [Includes/]
+    [docker/]
+    [src/]
+    [test/]
+    [TraceLib/]
+    [out/]
+    [scripts/]
+    [simulations/]
+    [CHANGELOG]
+    [Makefile]
+    [README.md]
+    ]
+]
+\end{forest}\\
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SUBSUBSECTION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{src}
+El directorio \verb|src/| contiene los ficheros fuente de los diferentes elementos que compondrán la red de interconexión. Dicho directorio contiene la siguiente estructura:\\
+
+% Árbol de directorios de src
+\begin{forest}
+  for tree={
+    font=\ttfamily,
+    grow'=0,
+    child anchor=west,
+    parent anchor=south,
+    anchor=west,
+    calign=first,
+    edge path={
+      \noexpand\path [draw, \forestoption{edge}]
+      (!u.south west) +(7.5pt,0) |- node[fill,inner sep=1.25pt] {} (.child anchor)\forestoption{edge label};
+    },
+    before typesetting nodes={
+      if n=1
+        {insert before={[,phantom]}}
+        {}
+    },
+    fit=band,
+    before computing xy={l=15pt},
+  }
+[sauron
+  [src
+    [Arbiter/]
+    [Energy/]
+    [InjectionThrottling/]
+    [NetworkConfigurator/]
+    [NetworkElement/]
+    [QueueingLogic/]
+    [Router/]
+    [System/]
+    [Config.h]
+    [customFilters.cc]
+    [customFilters.h]
+    [Message\_m.cc]
+    [Message\_m.h]
+    [Message.msg]
+    [NedFunctions.cc]
+    [package.ned]
+  ]
+]
+\end{forest}\\
+
+\begin{itemize}
+    \item \verb|Arbiter/|. Este directorio contiene los ficheros fuente que definen y describen los módulos dedicados al arbitraje dentro de la arquitectura de los switches y las NIC.
+    \item \verb|Energy/|.
+    \item \verb|InjectionThrottling/|.
+    \item \verb|NetworkConfigurator/|. Este directorio contiene los ficheros fuente que definen diferentes aspectos de la red, como la topología a usar. En él se definen parámetros genéricos para todo tipo de topología, como el número de nodos, el número de aplicaciones, y otros parámetros más específicos del tipo de topología, como el número de fases en las topologías indirectas.
+    \item \verb|NetworkElement/|. Este directorio contiene los ficheros fuente que definen y describen módulos relativos a los dispositivos de red. Incluye tanto módulos simples, como son los puertos (\emph{Port}) o el crossbar (\emph{CrossbarRegister}); como módulos compuestos, como son los switches y HCAs, que se componen de módulos simples situados en este directorio o fuera de este (e.g. los localizados en el directorio \verb|Arbiter/|).
+    \item \verb|QueueingLogic/|.
+    \item \verb|Router/|.
+    \item \verb|System/|. Este directorio contiene los ficheros fuente que definen los módulos que se encargan de generar los mensajes, empaquetarlos e inyectarlos a la red a través de las HCA.
+\end{itemize}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SUBSUBSECTION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{simulations}\label{sec:simulations}
+El directorio \verb|simulations/| contiene los ficheros fuente de las diferentes topologías a simular, así como los patrones de tráfico que se lanzarán durante la simulación. Aquí se incluyen los diferentes ficheros de configuración \verb|omnetpp.ini|, donde se inicializan los diferentes parámetros declarados en los diferentes ficheros \verb|.NED| que componen la simulación. A continuación se muestra el árbol de directorios de \verb|simulations/|. Con el fin de que no salga un árbol demasiado extenso, sólo se mostrarán los directorios que se desarrollarán más adelante, mientras que los puntos suspensivos representan una serie de directorios de topologías cuya estructura es similar a la de la topología que se explicará:\\
+
+% Árbol de directorios de simulations
+\begin{forest}
+  for tree={
+    font=\ttfamily,
+    grow'=0,
+    child anchor=west,
+    parent anchor=south,
+    anchor=west,
+    calign=first,
+    edge path={
+      \noexpand\path [draw, \forestoption{edge}]
+      (!u.south west) +(7.5pt,0) |- node[fill,inner sep=1.25pt] {} (.child anchor)\forestoption{edge label};
+    },
+    before typesetting nodes={
+      if n=1
+        {insert before={[,phantom]}}
+        {}
+    },
+    fit=band,
+    before computing xy={l=15pt},
+  }
+[sauron
+  [simulations
+    [...]
+    [RLFT/]
+    [...]
+    [TrafficConfigurations/]
+    [package.net]
+  ]
+]
+\end{forest}\\
+
+\begin{itemize}
+    \item \verb|RLFT/|. Este directorio contiene los ficheros fuente que definen una red con topología \emph{Recursive Low-Diameter Fat Tree}. Dichos ficheros incluyen el fichero de configuración \verb|omnetpp.ini| y el fichero de descripción de la red \verb|RLFT.ned|. Además, aquí también se incluye un directorio que contiene los resultados de las simulaciones lanzadas con esta topología.
+    \item \verb|TrafficConfigurations/|. Este directorio contiene los ficheros fuente que definen los diferentes patrones de tráfico que se pueden lanzar en la red que se va a simular. Debido a que el patrón de tráfico depende de la clase de topología, existen diferentes directorios para cada clase (e.g. redes directas, redes indirectas, \textit{dragonfly}...). Cada uno de estos subdirectorios contiene los ficheros de configuración para cada patrón de tráfico.
+    \item \verb|package.ned|.
+\end{itemize}
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SUBSECTION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Ramas}
+Al igual que se comentó en el Capítulo \ref{sec:cap2} cuando se implementa alguna funcionalidad dentro de una de las ramas de desarrollo de características, es recomendable hacer un \emph{merge} de \verb|origin/Development|, resolver los conflictos que puedan surgir y revisar el pipeline CI/CD. Así como programar tests (tanto escenario como script de ejecución) que comprueben los resultados de simulaciones para añadirlos al CI/CD.
+
+\textcolor{red}{AÑADIR IMAGEN}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SUBSECTION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Issues}
+Cuando se detecte algún problema en el simulador o se eche en falta alguna funcionalidad, se crea un \emph{Issue} que refleje dicha incidencia. Con el fin de mantener los issues organizados, se asignará una etiqueta cuando se vayan creando. Además, se crea una rama asociada al issue para resolverlo. Una vez resuelto, se hace un \emph{merge} en la rama \verb|Development|.
+
+\textcolor{red}{AÑADIR IMAGEN}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SUBSECTION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Integración continua (Test CI)}
+Para asegurar que las funcionalidades básicas del simulador funcionan cada vez que se suben \emph{commits} al repo, se ejecutan una serie de test que comprueban que el simulador funcione como antes de incorporar los nuevos cambios.
+
+\textcolor{red}{AÑADIR IMAGEN}
+
+\begin{aclaracion}[¿Qué hacer si falla algún test?]
+        El primer paso es inspeccionar la salida de los \emph{CI tests}. Tras esto, se descarga el artefacto para, a continuación, analizarlo en local repitiendo las pruebas en busca del fallo.
+\end{aclaracion}
+
+Tras la implementación de los tests de integración continua nuevos, hay que declararlos dentro del fichero \verb|.gitlab-ci.yml| que será utilizado por los runners de GitLab CI/CD para ejecutar dichos tests dentro de un pipeline.\\
+
+Dentro del directorio \verb|tests/| se encuentran los scripts de los diferentes tests, los archivos \verb|INI| utilizados y las trazas que usan los tests.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SECTION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Ejemplo: Generación de simulaciones y recogida de resultados}
+
+A continuación, se verá un ejemplo en el que se lanzará una simulación de una red \emph{Fat Tree} con 8 nodos utilizando un patrón de tráfico sintético que lance mensajes a la red de manera aleatoria. Dicho tráfico se lanzará en un conjunto de 10 simulaciones en las que se variará el porcentaje de carga en la red.
+
+\subsection{Configuración de la red}
+La configuración de la red a simular se llevará a cabo en el fichero \verb|omnetpp.ini| localizado en el directorio de la topología correspondiente que se quiera simular (véase Sección \ref{sec:simulations}). Dentro de dicho fichero habrá que especificar parámetros como la topología, el algoritmo de encaminamiento, el patrón de tráfico... de la red.\\
+
+El fichero \verb|omnetpp.ini| presenta diferentes secciones. La principal, llamada \verb|[General]| define los parámetros generales de la red. Hay otra sección llamada \verb|portConfig| que define la configuración de los puertos de los dispositivos que participan en la red. Esta sección es una extensión de una de las extensiones definidas en los ficheros de configuración \verb|PortPFC.ini| y \verb|OriginalPort.ini|, donde se encuentran la definición de los parámetros que definen la arquitectura de los switches. Por último, se pueden definir secciones propias en el caso de que se quieran lanzar diferentes simulaciones con pequeñas variaciones en algún aspecto de la red.
+
+En la Figura \ref{lst:omnetpp.ini} se muestra un ejemplo de un fichero de configuración en el que se muestran las diferentes secciones comentadas anteriormente.
+
+\begin{mycode}[style=bashstyle, label=lst:omnetpp.ini, caption={Configuración de la red.}]
+[General]
+network = RLFT
+
+cmdenv-status-frequency = 5s
+sim-time-limit = 0.002000001s
+cmdenv-interactive=true
+#Net
+**.topology = "rlft"
+**.channelDistance = 5m
+
+#Routing and Arbitration
+**.routingAlgorithm = "destro"
+**.H[*].arbiter.typename = "Arbiter_TwoPhased"
+**.SW[*].arbiter.typename = "Arbiter_ThreePhased"
+**.requestProcessingTime = 6ns
+
+#Logging
+**.logInterval = 10us
+
+**.sysMng.**.result-recording-modes = default, +vector,+histogram
+**.sys.app*-**.result-recording-modes = default, +vector,+histogram
+**.H[*].**.scalar-recording = false
+**.SW[*].**.scalar-recording = false
+**.param-recording = false
+
+#Port Configurations
+include ../TrafficConfigurations/PortPFC.ini
+include ../TrafficConfigurations/originalPort.ini
+
+
+# Port configuration for IQ switch
+[Config portConfig] #Note that the config included extends from General and portConfig, change the next extend to test other technologies 
+#extends=IB-QDR  # IQ
+extends=bxi3	# CIOQ
+
+#Queuing schemes configurations
+include ../TrafficConfigurations/indirect/schemes.ini
+
+#Traffic generation modes
+include ../TrafficConfigurations/indirect/random.ini
+include ../TrafficConfigurations/indirect/hotspot.ini
+include ../TrafficConfigurations/indirect/victim.ini
+include ../TrafficConfigurations/indirect/local.ini
+include ../TrafficConfigurations/indirect/storage.ini
+include ../TrafficConfigurations/indirect/ebb.ini
+include ../TrafficConfigurations/indirect/ebb_hs.ini
+include ../TrafficConfigurations/indirect/zipf1.ini
+include ../TrafficConfigurations/indirect/sla3.ini
+include ../TrafficConfigurations/indirect/ptrans.ini
+include ../TrafficConfigurations/indirect/natRing.ini
+include ../TrafficConfigurations/indirect/graph500.ini
+
+
+# 8 nodes - Random traffic - Aging arbiter - IQ switch
+[Config SynthAgingIQ8Nodes]
+extends=portConfig
+
+# Network
+**.arity = ${arity=2}
+**.numStages = ${numStages=2}
+**.numNodes = int(2*pow(${arity},${numStages}))
+
+# Switch
+#**.SW[*].virtualOutputQueues = false
+
+# Applications
+# These are defined in the configuration file of the specific traffic configuration
+**.firstLog = 0.00000s
+
+**.numApps = 1
+**.app[0].typename = "SyntheticApplication"
+**.app[0].msgSize = ${header}B+${data}B
+**.app[0].load = ${load=10..100 step 10}
+**.app[0].fileName = "R"
+#**.app[0].msgForStats = 10000
+
+# Queueing scheme
+**.congestionControlTechnique = "1q"
+**.numQueues = 1
+        \end{mycode}
+
+\subsubsection{Topología}
+La topología se indica en el parámetro \verb|topology|, que viene declarado en el fichero \verb|NetworkConfigurator.ned|. En este caso, se debe indicar una topología \verb|"rlft"|, correspondiente a la \emph{Fat Tree}.
+
+\subsubsection{Encaminamiento y arbitraje}
+El algoritmo de arbitraje 
