@@ -62,3 +62,27 @@ Algunas opciones extra para formatear las gráficas (tamaño de la letra, ejes, 
 \section{Wiki (WIP)}
 La wiki del repositorio incluye información sobre esquemas de colas, patrones de tráfico y diferentes guías (guía de inicio, guía del directorio \verb|simulations/|).
 
+\section{Patrones de tráfico}%
+\label{sec:trafico}
+En SAURON podemos generar diferentes tipos de tráfico. A continuación se describen algunos de los siguientes:
+
+\subsection{Random}%
+\label{sub:Random}
+
+\subsection{Hotspot}%
+\label{sub:Hotspot}
+El tráfico hotspot consiste en la generación de dos tráficos en realidad:
+
+\begin{itemize}
+	\item Tráfico hotspot propiamente dicho. Dicho tráfico se encarga de generar un punto caliente en la red (\emph{hotspot}). Este tráfico se combinará con un tráfico random sintético, de tal manera que se muestre cómo afecta dicho punto caliente en éste último.
+	\item Tráfico random sintético. Este tráfico envía mensajes de cualquier nodo a cualquier nodo de manera aleatoria.
+\end{itemize}
+
+La definición de estos tráficos se puede llevar a cabo de diferentes maneras:
+
+\begin{enumerate}
+	\item Creación de dos aplicaciones. Este método es útil para crear un conjunto de estadísticas para cada aplicación. Por ejemplo, si sólo interesa ver las estadísticas para el tráfico random sin tener en cuenta las del hotspot, este método puede resultar más conveniente.
+	\item Creación de ficheros \verb|.IN|. Este método es útil si se quiere obtener unas estadísticas globales para toda la red. Para ello, hay que especificar un fichero con extensión \verb|.IN| en el que se especifica dónde y qué tipo de tráfico va a enviar cada nodo de la red. Como una red puede constar de miles de nodos, existe un script en Python (\verb|/scripts/interactive/TrafficGen.py|) que se encarga de crear dichos ficheros en función de una serie de parámetros.
+\end{enumerate}
+
+
